@@ -23,6 +23,7 @@
 %%%  Public License) is based on, is included in this exception.
 
 -module(ts_amqp).
+-compile([{parse_transform, lager_transform}]).
 
 -vc('$Id$ ').
 -author('jzhihui521@gmail.com').
@@ -34,6 +35,8 @@
 -include("ts_amqp.hrl").
 -include("rabbit.hrl").
 -include("rabbit_framing.hrl").
+%% 图书馆系统的专用头文件
+-include("peter.hrl").
 
 -export([add_dynparams/4,
          get_message/2,
@@ -68,8 +71,86 @@ decode_buffer(Buffer,#amqp_session{}) ->
 %% Returns: record or []
 %%----------------------------------------------------------------------
 new_session() ->
-    #amqp_session{map_num_pa = gb_trees:empty(), ack_buf = <<>>}.
+    ?LOGF("_72:",[],?NOTICE),
+    A = #amqp_session{map_num_pa = gb_trees:empty(), ack_buf = <<>>},
+    gate_session(A).
 
+%%-------------------
+%% 模拟gate程序构造session的数据
+%%-------------------
+gate_session(Session)->
+    Session#amqp_session{receive_routing_key = get_id(),
+                         queue_postfix = get_id()
+                        }.
+
+get_id()->
+    integer_to_binary(random:uniform(10000000000)).
+
+%%------------------
+%% 获得header信息
+%%------------------
+get_header(_Client,#amqp_session{receive_routing_key = Receive_routing_key,
+                                 queue_postfix = Queue_postfix
+                                })->
+    [{<<"receive_routing_key">>,longstr,Receive_routing_key},
+     {<<"queue_postfix">>,longstr,Queue_postfix}].
+
+%%------------------
+%% 获得exchange与queue的信息
+%%------------------
+get_exchange_queue(#amqp_request{client_type = <<"abiud">>},
+                   #amqp_session{queue_postfix = Queue_postfix})->
+    Exchange =  ?EXCHANGE_POWER_EQUIPMENT_IN,
+    Queue = <<?QUEUE_POWER/binary,?EXTENSION_SPLITTER/binary,Queue_postfix/binary>>,
+    {Exchange,Queue};
+
+get_exchange_queue(#amqp_request{client_type = <<"willing">>},
+                   #amqp_session{queue_postfix = Queue_postfix})->
+    Exchange =  ?EXCHANGE_WILLING_IN,
+    Queue = <<?QUEUE_WILLING/binary,?EXTENSION_SPLITTER/binary,Queue_postfix/binary>>,
+    {Exchange,Queue};
+
+get_exchange_queue(#amqp_request{client_type = <<"hand">>},
+                   #amqp_session{queue_postfix = Queue_postfix})->
+    Exchange =  ?EXCHANGE_POWER_DB_IN,
+    Queue = <<?QUEUE_POWER/binary,?EXTENSION_SPLITTER/binary,Queue_postfix/binary>>,
+    {Exchange,Queue};
+
+get_exchange_queue(#amqp_request{client_type = <<"soldier">>},
+                   #amqp_session{queue_postfix = Queue_postfix})->
+    Exchange =  ?EXCHANGE_SOLDIER_IN,
+    Queue = <<?QUEUE_POWER/binary,?EXTENSION_SPLITTER/binary,Queue_postfix/binary>>,
+    {Exchange,Queue}.
+
+%%--------------------
+%% 获得需要发送的routing_key信息
+%%--------------------
+get_send_routing_key(#amqp_request{client_type = <<"hand">>,
+                                  space_id = Space_id
+                                  },
+                     _)->
+    <<?ROUTING_KEY_HAND_IN/binary,?EXTENSION_SPLITTER/binary,
+      Space_id/binary>>;
+
+get_send_routing_key(#amqp_request{client_type = <<"willing">>,
+                                  space_id = Space_id
+                                  },
+                     _)->
+    <<?ROUTING_KEY_WILLING_IN/binary,?EXTENSION_SPLITTER/binary,
+      Space_id/binary>>;
+
+get_send_routing_key(#amqp_request{client_type = <<"soldier">>,
+                                  space_id = Space_id
+                                  },
+                    _)->
+    Space_id;
+
+get_send_routing_key(#amqp_request{equipment_id = Equipment_id,
+                                 equipment_channel_no = Equipment_channel_no
+                                  },_) ->
+    <<Equipment_id/binary,"-",Equipment_channel_no/binary>>.
+
+%%--------------------
 dump(A,B) ->
     ts_plugin:dump(A,B).
 %%----------------------------------------------------------------------
@@ -85,26 +166,32 @@ get_message(Request = #amqp_request{channel = ChannelStr}, State) ->
 
 get_message1(#amqp_request{type = connect}, #state_rcv{session = AMQPSession}) ->
     Waiting = {0, 'connection.start'},
+    ?LOG("_90,type_connect",?NOTICE),
     {?PROTOCOL_HEADER, AMQPSession#amqp_session{status = handshake,
                                                 waiting = Waiting,
                                                 protocol = ?PROTOCOL}};
 
-get_message1(#amqp_request{type = 'connection.start_ok', username = UserName,
-                          password = Password},
-            #state_rcv{session = AMQPSession}) ->
+get_message1(#amqp_request{type = 'connection.start_ok'
+                          %%, username = UserName,
+                          %% password = Password
+                          },
+             #state_rcv{session = AMQPSession=#'amqp_session'{amqp_user_name = UserName,
+                                                             amqp_password = Password
+                                                             }
+                       }) ->
     Protocol = AMQPSession#amqp_session.protocol,
-
-    ?DebugF("start with: user=~p, password=~p~n", [UserName, Password]),
     
-    Resp = plain(none, list_to_binary(UserName), list_to_binary(Password)),
+    ?DebugF("start with: user=~p, password=~p~n", [UserName, Password]),
+
+    Resp = plain(none, UserName, Password),
     StartOk = #'connection.start_ok'{client_properties = client_properties([]),
                                      mechanism = <<"PLAIN">>, response = Resp},
     Frame = assemble_frame(0, StartOk, Protocol),
     Waiting = {0, 'connection.tune'},
-    {Frame, AMQPSession#amqp_session{waiting = Waiting}};
+    {Frame, AMQPSession#amqp_session{waiting = Waiting,username = UserName}};
 
 get_message1(#amqp_request{type = 'connection.tune_ok', heartbeat = HeartBeat},
-            #state_rcv{session = AMQPSession}) ->
+             #state_rcv{session = AMQPSession}) ->
     Protocol = AMQPSession#amqp_session.protocol,
 
     Tune = #'connection.tune_ok'{frame_max = 131072, heartbeat = HeartBeat},
@@ -112,22 +199,24 @@ get_message1(#amqp_request{type = 'connection.tune_ok', heartbeat = HeartBeat},
     {Frame, AMQPSession#amqp_session{waiting = none}};
 
 get_message1(#amqp_request{type = 'connection.open', vhost = VHost},
-            #state_rcv{session = AMQPSession}) ->
+             #state_rcv{session = AMQPSession}) ->
+    error_logger:info_msg("_117_coonection.open"),
     Protocol = AMQPSession#amqp_session.protocol,
-
     Open = #'connection.open'{virtual_host = list_to_binary(VHost)},
     Frame = assemble_frame(0, Open, Protocol),
+    ?LOGF("_122:~p,~p~n",[Frame,Open],?NOTICE),
     Waiting = {0, 'connection.open_ok'},
     {Frame, AMQPSession#amqp_session{waiting = Waiting}};
 
 get_message1(#amqp_request{type = 'channel.open', channel = Channel},
-            #state_rcv{session = AMQPSession}) ->
+             #state_rcv{session = AMQPSession}) ->
     Protocol = AMQPSession#amqp_session.protocol,
     MapNPA = AMQPSession#amqp_session.map_num_pa,
-
+    ?LOGF("_131:~p~n",[Channel],?NOTICE),
     ChannelOpen = #'channel.open'{},
     case new_number(Channel, AMQPSession) of
         {ok, Number} ->
+            ?LOGF("_135:~p~n",[Number],?NOTICE),
             MapNPA1 = gb_trees:enter(Number, unused, MapNPA),
             put({chstate, Number}, #ch{unconfirmed_set = gb_sets:new(),
                                        next_pub_seqno = 0}),
@@ -140,7 +229,7 @@ get_message1(#amqp_request{type = 'channel.open', channel = Channel},
     end;
 
 get_message1(#amqp_request{type = 'channel.close', channel = Channel},
-            #state_rcv{session = AMQPSession}) ->
+             #state_rcv{session = AMQPSession}) ->
     Protocol = AMQPSession#amqp_session.protocol,
 
     ChannelClose = #'channel.close'{reply_text = <<"Goodbye">>,
@@ -152,7 +241,7 @@ get_message1(#amqp_request{type = 'channel.close', channel = Channel},
     {Frame, AMQPSession#amqp_session{waiting = Waiting}};
 
 get_message1(#amqp_request{type = 'confirm.select', channel = Channel},
-            #state_rcv{session = AMQPSession}) ->
+             #state_rcv{session = AMQPSession}) ->
     Protocol = AMQPSession#amqp_session.protocol,
 
     Confirm = #'confirm.select'{},
@@ -161,9 +250,9 @@ get_message1(#amqp_request{type = 'confirm.select', channel = Channel},
     {Frame, AMQPSession#amqp_session{waiting = Waiting}};
 
 get_message1(#amqp_request{type = 'basic.qos', prefetch_size = PrefetchSize,
-                          channel = Channel,
-                          prefetch_count = PrefetchCount},
-            #state_rcv{session = AMQPSession}) ->
+                           channel = Channel,
+                           prefetch_count = PrefetchCount},
+             #state_rcv{session = AMQPSession}) ->
     Protocol = AMQPSession#amqp_session.protocol,
 
     Qos = #'basic.qos'{prefetch_size = PrefetchSize,
@@ -172,53 +261,73 @@ get_message1(#amqp_request{type = 'basic.qos', prefetch_size = PrefetchSize,
     Waiting = {Channel, 'basic.qos_ok'},
     {Frame, AMQPSession#amqp_session{waiting = Waiting}};
 
-get_message1(#amqp_request{type = 'basic.publish', channel = Channel,
-                          exchange = Exchange, routing_key = RoutingKey,
-                          payload_size = Size, payload = Payload,
-                          persistent = Persistent},
-            #state_rcv{session = AMQPSession}) ->
+get_message1(Request = #amqp_request{type = 'basic.publish', channel = Channel,
+                           exchange = _Exchange, routing_key = _RoutingKey,
+                           payload_size = _Size, payload = Payload,
+                           persistent = Persistent %% ,
+                          %%  client_type = Client_type
+                          %%  headers = Headers
+                          },
+             #state_rcv{session = AMQPSession}) ->
+    lager:debug("_181"),
     Protocol = AMQPSession#amqp_session.protocol,
-    MsgPayload = case Payload of
-                     "" -> list_to_binary(ts_utils:urandomstr_noflat(Size));
-                     _ -> list_to_binary(Payload)
-                 end,
-    Publish = #'basic.publish'{exchange = list_to_binary(Exchange),
-                               routing_key = list_to_binary(RoutingKey)},
+    UserName = AMQPSession#amqp_session.username,
+    %% MsgPayload = case Payload of
+    %%                  "" -> list_to_binary(ts_utils:urandomstr_noflat(Size));
+    %%                  _ -> list_to_binary(Payload)
+    %%              end,
+    MsgPayload = Payload,
+    Headers = get_header(Request,AMQPSession),
+    Sending_routing_key = get_send_routing_key(Request,AMQPSession),
+    {Exchange,Queue} = get_exchange_queue(Request,AMQPSession),
+    Publish = #'basic.publish'{exchange = Exchange,
+                               routing_key = Sending_routing_key},
     Msg = case Persistent of 
-        true ->
-            Props = #'P_basic'{delivery_mode = 2}, %% persistent message
-            build_content(Props, MsgPayload);
-        false ->
-            Props = #'P_basic'{},
-            build_content(Props, MsgPayload)
-    end,
+              true ->
+                  Props = #'P_basic'{delivery_mode = 2,
+                                     headers = Headers,
+                                    user_id=UserName
+                                    }, %% persistent message
+                  build_content(Props, MsgPayload);
+              false ->
+                  Props = #'P_basic'{headers = Headers,
+                                     user_id=UserName
+                                    },
+                  build_content(Props, MsgPayload)
+          end,
     Frame = assemble_frames(Channel, Publish, Msg, ?FRAME_MIN_SIZE, Protocol),
+    ?LOGF("_203:~p~n~p~n~p~n",[Msg,Frame,Publish],?NOTICE),
     ChState = get({chstate, Channel}),
     NewChState = case ChState#ch.next_pub_seqno of
-        0 ->
-            ChState;
-        SeqNo ->
-            USet = ChState#ch.unconfirmed_set,
-            ChState#ch{unconfirmed_set = gb_sets:add(SeqNo, USet),
-                                     next_pub_seqno = SeqNo + 1}
-    end,
+                     0 ->
+                         ?LOG("_208",?NOTICE),
+                         ChState;
+                     SeqNo ->
+                         ?LOG("_211",?NOTICE),
+                         USet = ChState#ch.unconfirmed_set,
+                         ChState#ch{unconfirmed_set = gb_sets:add(SeqNo, USet),
+                                    next_pub_seqno = SeqNo + 1}
+                 end,
     put({chstate, Channel}, NewChState),
+    ?LOG("_217",?NOTICE),
     ts_mon:add({count, amqp_published}),
-    {Frame, AMQPSession};
+    {Frame, AMQPSession#amqp_session{amqp_queue=Queue}};
 
-get_message1(#amqp_request{type = 'basic.consume', channel = Channel,
-                           queue = Queue, ack = Ack},
+get_message1(_Request = #amqp_request{type = 'basic.consume', channel = Channel,
+                           ack = Ack},
              #state_rcv{session = AMQPSession}) ->
+    ?LOG("_319",?NOTICE),
     Protocol = AMQPSession#amqp_session.protocol,
-
+    Queue = AMQPSession#amqp_session.amqp_queue,
     NoAck = case Ack of
-        true -> false;
-        _ -> true
-    end,
-
+                true -> false;
+                _ -> true
+            end,
     ConsumerTag = list_to_binary(["tsung-", ts_utils:randombinstr(10)]),
-    Sub = #'basic.consume'{queue = list_to_binary(Queue),
-                           consumer_tag = ConsumerTag, no_ack = NoAck},
+    % {_,Queue} = get_exchange_queue(Request,AMQPSession),
+    Sub = #'basic.consume'{queue = Queue,
+                           consumer_tag = ConsumerTag,
+                           no_ack = NoAck},
     ChState = get({chstate, Channel}),
     put({chstate, Channel}, ChState#ch{ack = Ack}),
     Frame = assemble_frame(Channel, Sub, Protocol),
@@ -226,7 +335,7 @@ get_message1(#amqp_request{type = 'basic.consume', channel = Channel,
     {Frame, AMQPSession#amqp_session{waiting = Waiting}};
 
 get_message1(#amqp_request{type = 'connection.close'},
-            #state_rcv{session = AMQPSession}) ->
+             #state_rcv{session = AMQPSession}) ->
     Protocol = AMQPSession#amqp_session.protocol,
 
     Close = #'connection.close'{reply_text = <<"Goodbye">>,
@@ -247,22 +356,27 @@ parse(closed, State) ->
     {State#state_rcv{ack_done = true, datasize = 0}, [], true};
 %% new response, compute data size (for stats)
 parse(Data, State=#state_rcv{acc = [], datasize = 0}) ->
+    ?LOG("_359",?NOTICE),
     parse(Data, State#state_rcv{datasize = size(Data)});
 
 %% handshake stage, parse response, and validate
 parse(Data, State=#state_rcv{acc = []}) ->
+    ?LOG("_364",?NOTICE),
     do_parse(Data, State);
 
 %% more data, add this to accumulator and parse, update datasize
 parse(Data, State=#state_rcv{acc = Acc, datasize = DataSize}) ->
+    ?LOG("_369",?NOTICE),
     NewSize= DataSize + size(Data),
     parse(<< Acc/binary, Data/binary >>,
           State#state_rcv{acc = [], datasize = NewSize}).
 
 parse_bidi(<<>>, State=#state_rcv{acc = [], session = AMQPSession}) ->
+    ?LOG("_375",?NOTICE),
     AckBuf = AMQPSession#amqp_session.ack_buf,
     NewAMQPSession = AMQPSession#amqp_session{ack_buf = <<>>},
     ?DebugF("ack buf: ~p~n", [AckBuf]),
+    ?LOGF("_379:ack buff:~p~n",[AckBuf],?NOTICE),
     {confirm_ack_buf(AckBuf), State#state_rcv{session = NewAMQPSession}};
 parse_bidi(Data, State=#state_rcv{acc = [], session = AMQPSession}) ->
     ?DebugF("parse bidi data: ~p ~p~n", [size(Data), Data]),
@@ -334,8 +448,10 @@ do_parse(Data, State = #state_rcv{session = AMQPSession}) ->
     Waiting = AMQPSession#amqp_session.waiting,
     case decode_and_check(Data, Waiting, State, Protocol) of
         {ok, _Method, Result} ->
+            ?LOGF("_450:~p~n",[Result],?NOTICE),
             Result;
         {fail, Result} ->
+            ?LOGF("_453:~p~n",[Result],?NOTICE),
             Result
     end.
 
@@ -369,7 +485,8 @@ get_post_fun(Channel, 'confirm.select_ok') ->
             {NewState1, Options, Close}
     end;
 
-get_post_fun(_Channel, 'basic.consume_ok') ->
+get_post_fun(_Channel, Name = 'basic.consume_ok') ->
+    ?LOG("_482",?NOTICE),
     fun({NewState, Options, Close}) ->
             AMQPSession = NewState#state_rcv.session,
             Socket = NewState#state_rcv.socket,
@@ -377,6 +494,7 @@ get_post_fun(_Channel, 'basic.consume_ok') ->
             LeftData = NewState#state_rcv.acc,
             NewAMQPSession = AMQPSession#amqp_session{waiting = none},
             NewState1 = NewState#state_rcv{acc = [], session = NewAMQPSession},
+            ?LOGF("_398,:~p,~p~n",[Name,LeftData],?NOTICE),
             case LeftData of
                 <<>> -> ok;
                 %% trick, trigger the parse_bidi call
@@ -403,6 +521,7 @@ new_number(0, #amqp_session{channel_max = ChannelMax,
                                map_num_pa = MapNPA}) ->
     case gb_trees:is_empty(MapNPA) of
         true  -> {ok, 1};
+        %% true  -> {ok, 0};
         false -> {Smallest, _} = gb_trees:smallest(MapNPA),
                  if Smallest > 1 ->
                         {ok, Smallest - 1};
@@ -440,8 +559,9 @@ confirm_ack_buf(AckBuf) ->
         _ -> AckBuf
     end.
 
-should_ack(Channel, AckBuf, #'basic.deliver'{delivery_tag = DeliveryTag},
+should_ack(Channel, AckBuf, Message = #'basic.deliver'{delivery_tag = DeliveryTag},
            AMQPSession = #amqp_session{protocol = Protocol}) ->
+    ?LOGF("_557:~p~n",[Message],?NOTICE),
     ChState = get({chstate, Channel}),
     case ChState#ch.ack of
         true ->
@@ -547,6 +667,7 @@ decode_and_check(Data, Waiting, State, Protocol) ->
             {ok, heartbeat, {State#state_rcv{ack_done = false, acc = Left},
                              [], true}};
         {ok, Channel, Method, Left} ->
+            ?LOGF("_669:~p~n",[Method],?NOTICE),
             check(Channel, Waiting, Method, State, Left);
         {incomplete, Left} ->
             ?DebugF("incomplete frame: ~p~n", [Left]),

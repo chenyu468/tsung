@@ -52,7 +52,7 @@
 -record('connection.secure', {challenge}).
 -record('connection.secure_ok', {response}).
 -record('connection.tune', {channel_max = 0, frame_max = 0, heartbeat = 0}).
--record('connection.tune_ok', {channel_max = 0, frame_max = 0, heartbeat = 0}).
+-record('connection.tune_ok', {channel_max = 1, frame_max = 0, heartbeat = 0}).
 -record('connection.open', {virtual_host = <<"/">>, capabilities = <<"">>, insist = false}).
 -record('connection.open_ok', {known_hosts = <<"">>}).
 -record('connection.close', {reply_code, reply_text = <<"">>, class_id, method_id}).

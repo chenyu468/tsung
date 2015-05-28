@@ -1,3 +1,4 @@
+-module(ts_misc).
 -export([build_acyclic_graph/3,all_module_attributes/1,orddict_cons/3]).
 -export([list_contain/2]).
 -export([to_atom/1,to_binary/1, to_boolean/1,to_float/1,
@@ -394,6 +395,9 @@ list_contain([_|Rest],Element) ->
 trim(String) ->
     String2 = lists:dropwhile(fun is_whitespace/1, String),
     lists:reverse(lists:dropwhile(fun is_whitespace/1, lists:reverse(String2))).
+
+to_binary(undefined)->
+    undefined;
 
 to_binary(V) when is_binary(V) ->
     V;
@@ -1100,7 +1104,6 @@ df(X,Y,Type)->
                 datetime ->
                     parse_datetime(Other);
                 date ->
-                    lager:debug("_911"),
                     parse_date(Other);
                 binary ->
                     love_misc:to_binary(Other);
@@ -1113,7 +1116,6 @@ df(X,Y,Type)->
                 boolean ->
                     love_misc:to_boolean(Other);
                 Unknow ->
-                    lager:debug("_867:~n\t~p~n\t~p~n\t~p",[X,Y,Type]),
                     {error,unknow_type,Unknow}
             end            
     end.

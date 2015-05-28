@@ -57,7 +57,15 @@
           payload,
           payload_size,
           queue,
-          ack
+          ack,
+          %%--------------
+          %% 添加的字段
+          %%--------------
+          headers, %% 这个字段不需要使用，下层构造完成
+          client_type, %% 保存 abiud, willing, hand, soldier四个字段 
+          space_id, %% 空间id
+          equipment_id, %% 设备编号
+          equipment_channel_no %% 设备的通道编号
          }).
 
 -record(amqp_dyndata, { 
@@ -79,6 +87,14 @@
           map_num_pa,
           ack_buf,
           status, % status of handshake
-          waiting = none % waiting state: {Channel, Expecting}
+          waiting = none, % waiting state: {Channel, Expecting}
+          %% 新增加的参数
+          username, %% 用户名
+          %% gate模拟程序需要的变量
+          receive_routing_key,
+          queue_postfix,
+          amqp_user_name,
+          amqp_password,
+          amqp_queue
          }).
 

@@ -37,6 +37,7 @@
 
 -include("ts_config.hrl").
 -include("ts_profile.hrl").
+-include("ts_amqp.hrl").
 
 %% External exports
 -export([start/1, next/1]).
@@ -88,7 +89,10 @@ init(#session{ id           = SessionId,
                dump         = Dump,
                seed         = Seed,
                server       = Server,
-               type         = CType}) ->
+               type         = CType,
+               amqp_user_name = User_name, 
+               amqp_password = Password
+             }) ->
     ?DebugF("Init ... started with count = ~p~n",[Count]),
     case Seed of
         now ->
@@ -98,7 +102,6 @@ init(#session{ id           = SessionId,
             %% use a different but fixed seed for each client.
             ts_utils:init_seed({Id,SeedVal})
     end,
-
     ?DebugF("Get dynparams for ~p~n",[CType]),
     DynVars = ts_dynvars:new(tsung_userid,Id),
     StartTime= ?NOW,
@@ -111,7 +114,7 @@ init(#session{ id           = SessionId,
                                  {scan, Interface} ->
                                      ts_ip_scan:get_ip(Interface);
                                  _ -> TmpIP
-                    end,
+                             end,
                     {RealIP, "cport-" ++ MyHostName};
                 {{scan, Interface}, PortVal } ->
                     ?DebugF("Must scan interface: ~p~n",[Interface]),
@@ -125,14 +128,24 @@ init(#session{ id           = SessionId,
                                     {Token#token_bucket{last_packet_date=StartTime}, Thresh};
                                 undefined ->
                                     {undefined, ?size_mon_thresh}
-               end,
+                            end,
+    Session_1 = CType:new_session(),
+    Session = case CType == 'ts_amqp' of
+                  true ->
+                      Session_1#'amqp_session'{amqp_user_name = User_name,
+                                               amqp_password = Password
+                                              };
+                  false ->
+                      Session_1
+              end,
     {ok, think, #state_rcv{ port       = Server#server.port,
                             host       = Server#server.host,
                             session_id = SessionId,
                             bidi       = Bidi,
                             protocol   = Server#server.type,
                             clienttype = CType,
-                            session    = CType:new_session(),
+                                                % session    = CType:new_session(),
+                            session = Session,
                             persistent = Persistent,
                             starttime  = StartTime,
                             dump       = Dump,
@@ -146,7 +159,7 @@ init(#session{ id           = SessionId,
                             maxcount   = Count,
                             rate_limit = RateConf,
                             dynvars    = DynVars
-                           }}.
+                          }}.
 
 %%--------------------------------------------------------------------
 %% Func: StateName/2
@@ -296,6 +309,7 @@ handle_info2({gen_ts_transport, Socket, Data}, think,State=#state_rcv{
     ts_mon:rcvmes({State#state_rcv.dump, self(), Data}),
     ts_mon:add({ sum, size_rcv, size(Data)}),
     Proto = State#state_rcv.protocol,
+    ?LOGF("_299:~p~n",[Data],?INFO),
     ?LOG("Data received from socket (bidi) in state think~n",?INFO),
     NewState = case Type:parse_bidi(Data, State) of
                    {nodata, State2} ->
@@ -796,14 +810,18 @@ handle_next_request(Request, State) ->
              end,
 
     {Message, NewSession} = Type:get_message(Param,State),
+    ?LOGF("_799:~p,~p,~p~n",[Request,Message,NewSession],?NOTICE),
     Now = ?NOW,
 
     %% reconnect if needed
     ProtoOpts = State#state_rcv.proto_opts,
+    %% ?LOGF("_804:~p,~p~n",[Protocol,ProtoOpts],?NOTICE),
     case reconnect(Socket,Host,Port,{Protocol,ProtoOpts},State#state_rcv.ip) of
         {ok, NewSocket} ->
+            ?LOG("_808",?NOTICE),
             case catch send(Protocol, NewSocket, Message, Host, Port) of
                 ok ->
+                    ?LOGF("_811:~p~n",[Message],?NOTICE),
                     PageTimeStamp = case State#state_rcv.page_timestamp of
                                         0 -> Now; %first request of a page
                                         _ -> %page already started
@@ -811,6 +829,7 @@ handle_next_request(Request, State) ->
                                     end,
                     ts_mon:add({ sum, size_sent, size_msg(Message)}),
                     ts_mon:sendmes({State#state_rcv.dump, self(), Message}),
+                    ?LOGF("_819:~p~n~p~n",[State#state_rcv.dump,Message],?NOTICE),
                     NewState = State#state_rcv{socket   = NewSocket,
                                                protocol = Protocol,
                                                host     = Host,
@@ -833,6 +852,7 @@ handle_next_request(Request, State) ->
                             {next_state, wait_ack, NewState}
                         end;
                 {error, closed} when State#state_rcv.retries < ProtoOpts#proto_opts.max_retries ->
+                    ?LOG("_841",?NOTICE),
                     ?LOG("connection close while sending message!~n", ?NOTICE),
                     ts_mon:add({ count, error_connection_closed }),
                     Retries = State#state_rcv.retries +1,
@@ -843,6 +863,7 @@ handle_next_request(Request, State) ->
                                                                retries=Retries,
                                                                port=Port});
                 {error, Reason}  when State#state_rcv.retries < ProtoOpts#proto_opts.max_retries ->
+                    ?LOG("_852",?NOTICE),
                     %% LOG only at INFO level since we report also an error to ts_mon
                     ?LOGF("Error: Unable to send data, reason: ~p~n",[Reason],?INFO),
                     CountName="error_send_"++atom_to_list(Reason),
@@ -867,16 +888,15 @@ handle_next_request(Request, State) ->
                     ts_mon:add({ count, error_abort_max_send_retries }),
                     {stop, normal, State}
             end;
-
         {error, timeout} when State#state_rcv.retries < ProtoOpts#proto_opts.max_retries ->
+            ?LOG("_875",?NOTICE),
             ts_mon:add({count, error_connect_timeout}),
-
             handle_reconnect_issue(State#state_rcv{session=NewSession});
-
         {error, _Reason} when State#state_rcv.retries < ProtoOpts#proto_opts.max_retries ->
+            ?LOG("_879",?NOTICE),
             handle_reconnect_issue(State#state_rcv{session=NewSession});
-
         {error, Reason} ->
+            ?LOG("_883",?NOTICE),
             case Reason of
                 timeout ->
                     ts_mon:add({count, error_connect_timeout});
@@ -975,6 +995,7 @@ handle_timeout_while_sending(State) ->
 %% Args: MaxCount, Count (integer), ProfileId (integer)
 %%----------------------------------------------------------------------
 set_profile(MaxCount, Count, ProfileId) when is_integer(ProfileId) ->
+    ?LOGF("_980:~p~n~p~n~p~n",[ProfileId,MaxCount,Count],?NOTICE),
     ts_session_cache:get_req(ProfileId, MaxCount-Count+1).
 
 %%----------------------------------------------------------------------
@@ -1054,6 +1075,7 @@ socket_opts(IP, CPort, _)->
 %% Return: ok | {error, Reason}
 %%----------------------------------------------------------------------
 send(Proto, Socket, Message, Host, Port)  ->
+    ?LOGF("_1066:~p,~p,~p~n",[Proto,Host,Port],?NOTICE),
     Proto:send(Socket, Message, [{host, Host}, {port, Port}]).
 
 connect(Proto, Server, Port, Opts, ConnectTimeout) ->

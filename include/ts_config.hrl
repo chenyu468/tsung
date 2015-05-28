@@ -109,7 +109,9 @@
           server,
           userid,
           seed,
-          dump
+          dump,
+          amqp_user_name,
+          amqp_password
         }).
 
 -record(arrivalphase,
