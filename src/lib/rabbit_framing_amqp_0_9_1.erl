@@ -33,7 +33,7 @@
 -export([encode_properties/1]).
 -export([lookup_amqp_exception/1]).
 -export([amqp_exception/1]).
-
+-include("ts_config.hrl").
 
 %% Various types
 -ifdef(use_specs).
@@ -1127,6 +1127,7 @@ encode_properties(#'P_basic'{content_type = F0, content_encoding = F1, headers =
   {P11, R12} = if F11 =:= undefined -> {0, R11}; true -> {1, [?SHORTSTR_PROP(F11, L11) | R11]} end,
   {P12, R13} = if F12 =:= undefined -> {0, R12}; true -> {1, [?SHORTSTR_PROP(F12, L12) | R12]} end,
   {P13, R14} = if F13 =:= undefined -> {0, R13}; true -> {1, [?SHORTSTR_PROP(F13, L13) | R13]} end,
+    ?LOGF("_1130:~p,~p~n",[F2,{P2,R3}],?NOTICE),
   list_to_binary([<<P0:1, P1:1, P2:1, P3:1, P4:1, P5:1, P6:1, P7:1, P8:1, P9:1, P10:1, P11:1, P12:1, P13:1, 0:2>> | lists:reverse(R14)]);
 encode_properties(#'P_tx'{}) ->
   <<>>;

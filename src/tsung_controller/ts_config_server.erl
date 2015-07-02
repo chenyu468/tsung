@@ -189,7 +189,7 @@ get_jobs_state() ->
 init([LogDir]) ->
     process_flag(trap_exit,true),
     {ok, MyHostName} = ts_utils:node_to_hostname(node()),
-    ?LOGF("Config server started, logdir is ~p~n ",[LogDir],?NOTICE),
+    ?LOGF("Config server started1, logdir is ~p~n ",[LogDir],?NOTICE),
     {ok, #state{logdir=LogDir, hostname=list_to_atom(MyHostName)}}.
 
 %%--------------------------------------------------------------------
@@ -203,8 +203,10 @@ init([LogDir]) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 handle_call({read_config, ConfigFile}, _From, State=#state{logdir=LogDir}) ->
+    ?LOGF("_206:~p~n",[ConfigFile],?NOTICE),
     case catch ts_config:read(ConfigFile, LogDir) of
         {ok, Config=#config{curid=LastReqId,sessions=[LastSess| Sessions]}} ->
+            ?LOG("_209~n",?NOTICE),
             ts_utils:init_seed(Config#config.seed),
             ts_user_server:init_seed(Config#config.seed),
             application:set_env(tsung_controller, clients, Config#config.clients),
@@ -288,6 +290,7 @@ handle_call({get_next_session, HostName, PhaseId}, _From, State=#state{users=Use
             ?LOGF("Session ~p chosen~n",[Id],?INFO),
             ts_mon:newclient({Id,?NOW}),
             {IPParam, Server} = get_user_param(Client,Config),
+            ?LOGF("_291:~p,~p~n",[IPParam,Server],?INFO),
             {reply, {ok, Session#session{client_ip= IPParam, server=Server,userid=Users,
                                          dump=Config#config.dump, seed=Config#config.seed}},
              State#state{users=Users+1} };
@@ -332,6 +335,7 @@ handle_call({get_client_config, Host}, _From, State=#state{curcfg=OldCfg,total_w
 %%
 handle_call({get_monitor_hosts}, _From, State) ->
     Config = State#state.config,
+    ?LOGF("_336:~p~n",[Config],?NOTICE),
     {reply, Config#config.monitor_hosts, State};
 
 % get status: send the number of actives nodes, number of phases

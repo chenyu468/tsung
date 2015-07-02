@@ -45,7 +45,7 @@ start() ->
 %%          {error, Reason}
 %%----------------------------------------------------------------------
 start(_Type, _StartArgs) ->
-    error_logger:tty(false),
+    %% error_logger:tty(false),
     case ts_utils:setsubdir(?config(log_dir)) of
         {error, {error, eacces} } ->
             Msg = "Error while creating log directory in ~s: permission denied~n" ,

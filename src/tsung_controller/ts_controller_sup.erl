@@ -102,6 +102,7 @@ start_inets(LogDir) ->
         {ok, true} ->
             inets:start(),
             Path = filename:join(filename:dirname(code:which(tsung_controller)),"../../../../../share/tsung/templates/style"),
+            %% Path = "/Users/yuchen/Documents/Project/tsung/src/templates/style",
             {ok,Styles} = file:list_dir(Path),
             DestDir = filename:join(LogDir,"style"),
             file:make_dir(DestDir),

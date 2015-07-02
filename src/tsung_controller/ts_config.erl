@@ -63,19 +63,23 @@ read(Filename=standard_io, LogDir) ->
     ?LOG("Reading config file from stdin~n", ?NOTICE),
     XML = read_stdio(),
     handle_read(catch xmerl_scan:string(XML,
-                                      [{fetch_path,["/usr/share/tsung/","./"]},
-                                       {validation,true}]),Filename,LogDir);
+                                        [{fetch_path,["../","./"]},
+                                        %%[{fetch_path,["/usr/share/tsung/","./"]},
+                                         {validation,true}]),Filename,LogDir);
 read(Filename, LogDir) ->
-    ?LOGF("Reading config file: ~s~n", [Filename], ?NOTICE),
+    ?LOGF("Reading config file: ~s,~s~n", [Filename,LogDir], ?NOTICE),
     Result = handle_read(catch xmerl_scan:file(Filename,
-                                               [{fetch_path,["/usr/share/tsung/","./"]},
+                                              %% [{fetch_path,["/usr/share/tsung/","./"]},
+                                               [{fetch_path,["../","./"]},
                                                 {validation,true}]),Filename,LogDir),
+    ?LOGF("_73:~p~n",[Result],?NOTICE),
     %% In case of error we reparse the file with xmerl_sax_parser:file/2 to obtain
     %% a more verbose output
     case Result of
         {ok, _} -> Result;
-        _ -> xmerl_sax_parser:file(Filename,[]),
-             Result
+        _ -> 
+            Result_1 = xmerl_sax_parser:file(Filename,[]),
+            Result_1
     end.
 
 
@@ -117,12 +121,12 @@ parse(Element = #xmlElement{name=server, attributes=Attrs}, Conf=#config{servers
     Type   = set_net_type(getAttr(Attrs, type)),
     Total  = OldTotal + Weight,
     lists:foldl(fun parse/2,
-        Conf#config{servers = [#server{host  = Server,
-                                       port  = Port,
-                                       weight= Weight,
-                                       type  = Type
-                                     }|ServerList], total_server_weights = Total},
-        Element#xmlElement.content);
+                Conf#config{servers = [#server{host  = Server,
+                                               port  = Port,
+                                               weight= Weight,
+                                               type  = Type
+                                              }|ServerList], total_server_weights = Total},
+                Element#xmlElement.content);
 
 
 
@@ -136,25 +140,25 @@ parse(Element = #xmlElement{name=monitor, attributes=Attrs},
                                         Element#xmlElement.content) of
                        {value, MysqlEl=#xmlElement{} } ->
                            Port = getAttr(integer,MysqlEl#xmlElement.attributes,
-                                                    port, ?config(mysql_port)),
+                                          port, ?config(mysql_port)),
                            Username = getAttr(string,MysqlEl#xmlElement.attributes,
-                                                    username, ?config(mysql_user)),
+                                              username, ?config(mysql_user)),
                            Password = getAttr(string,MysqlEl#xmlElement.attributes,
-                                                    password, ?config(mysql_password)),
+                                              password, ?config(mysql_password)),
                            {erlang, [{mysqladmin, {Port, Username, Password}}]};
-                        _ ->
+                       _ ->
                            {erlang, []}
-                    end;
+                   end;
                snmp ->
                    case lists:keysearch(snmp,#xmlElement.name,
                                         Element#xmlElement.content) of
                        {value, SnmpEl=#xmlElement{} } ->
                            Port = getAttr(integer,SnmpEl#xmlElement.attributes,
-                                                    port, ?config(snmp_port)),
+                                          port, ?config(snmp_port)),
                            Community = getAttr(string,SnmpEl#xmlElement.attributes,
-                                                         community, ?config(snmp_community)),
+                                               community, ?config(snmp_community)),
                            Version = getAttr(atom,SnmpEl#xmlElement.attributes,
-                                                       version, ?config(snmp_version)),
+                                             version, ?config(snmp_version)),
                            %% parse OIDS def
                            TmpConf = lists:foldl(fun parse/2, Conf#config{oids=[]}, SnmpEl#xmlElement.content),
                            {snmp, {Port, Community, Version,TmpConf#config.oids}};
@@ -168,7 +172,7 @@ parse(Element = #xmlElement{name=monitor, attributes=Attrs},
                                         Element#xmlElement.content) of
                        {value, MuninEl=#xmlElement{} } ->
                            Port = getAttr(integer,MuninEl#xmlElement.attributes,
-                                                    port, ?config(munin_port)),
+                                          port, ?config(munin_port)),
                            {munin, {Port}};
                        _ ->
                            {munin, {?config(munin_port) }}
@@ -182,8 +186,8 @@ parse(Element = #xmlElement{name=monitor, attributes=Attrs},
                      [{Host, Type}]
              end,
     lists:foldl(fun parse/2,
-        Conf#config{monitor_hosts = lists:append(MHList, NewMon)},
-        Element#xmlElement.content);
+                Conf#config{monitor_hosts = lists:append(MHList, NewMon)},
+                Element#xmlElement.content);
 
 
 parse(#xmlElement{name=oid, attributes=Attrs}, Conf=#config{oids=OIDS}) ->
@@ -244,7 +248,7 @@ parse(Element = #xmlElement{name=client, attributes=Attrs},
                                        Interface ->
                                            case os:type() of
                                                {unix, linux} ->
-                                                    [{scan, Interface}];
+                                                   [{scan, Interface}];
                                                OS ->
                                                    io:format(standard_error,"Scan interface is not supported on OS ~p, abort~n",[OS]),
                                                    exit({error, scan_interface_not_supported_on_os})
@@ -302,8 +306,8 @@ parse(Element = #xmlElement{name=ip, attributes=Attrs},
          end,
     ?LOGF("resolved host ~p~n",[IP],?WARN),
     lists:foldl(fun parse/2,
-        Conf#config{clients = [CurClient#client{ip = [IP|IPList]}
-                               |CList]},
+                Conf#config{clients = [CurClient#client{ip = [IP|IPList]}
+                                       |CList]},
                 Element#xmlElement.content);
 
 %% Parsing the arrivalphase element
@@ -359,9 +363,9 @@ parse(Element = #xmlElement{name=users, attributes=Attrs},
                         exit({invalid_xml,"arrivalrate and interarrival can't be defined simultaneously"})
                 end,
     lists:foldl(fun parse/2,
-        Conf#config{arrivalphases = [CurA#arrivalphase{maxnumber = Max,
-                                                        intensity=Intensity}
-                               |AList]},
+                Conf#config{arrivalphases = [CurA#arrivalphase{maxnumber = Max,
+                                                               intensity=Intensity}
+                                             |AList]},
                 Element#xmlElement.content);
 
 %% Parsing the session element
@@ -384,11 +388,13 @@ parse(Element = #xmlElement{name=session, attributes=Attrs},
     ?LOGF("Session type: persistent=~p, bidi=~p~n",[Persistent,Bidi],?INFO),
     Probability = getAttr(float_or_integer, Attrs, probability, -1),
     Weight      = getAttr(float_or_integer, Attrs, weight, -1),
+    Amqp_user_name = getAttr(Attrs, amqpusername),
+    Amqp_password = getAttr(Attrs, amqppassword),
     {Popularity, NewUseWeights, NewTotal} = get_popularity(Probability, Weight, Conf#config.use_weights,Conf#config.total_popularity),
     NewSList = case SList of
                    [] -> []; % first session
                    [Previous|Tail] ->
-                       % set total requests count in previous session
+                                                % set total requests count in previous session
                        [Previous#session{size=PrevReqId,type=Conf#config.main_sess_type}|Tail]
                end,
     lists:foldl(fun parse/2,
@@ -400,12 +406,15 @@ parse(Element = #xmlElement{name=session, attributes=Attrs},
                                                  bidi         = Bidi,
                                                  rate_limit   = Conf#config.rate_limit,
                                                  hibernate    = Conf#config.hibernate,
-                                                 proto_opts   = Conf#config.proto_opts
+                                                 proto_opts   = Conf#config.proto_opts,
+                                                 amqp_user_name = ts_misc:to_binary(Amqp_user_name),
+                                                 amqp_password = ts_misc:to_binary(Amqp_password)
                                                 }
                                         |NewSList],
                             main_sess_type = Type,
                             use_weights=NewUseWeights,
                             total_popularity=NewTotal,
+
                             curid=0, cur_req_id=0},% re-initialize request id
                 Element#xmlElement.content);
 
@@ -414,11 +423,11 @@ parse(Element = #xmlElement{name=session_setup, attributes=Attrs}, Conf = #confi
 
     Name         = getAttr(Attrs, name),
     {Popularity, NewUseWeights} =  case { Conf#config.use_weights,  getAttr(float_or_integer, Attrs, weight, -1) } of
-                                      {Use, -1} when (Use == undefined orelse Use == false) ->
-                                          { getAttr(float_or_integer, Attrs, probability, -1), false };
-                                      {_, Val} ->
-                                          { Val, true}
-                                  end,
+                                       {Use, -1} when (Use == undefined orelse Use == false) ->
+                                           { getAttr(float_or_integer, Attrs, probability, -1), false };
+                                       {_, Val} ->
+                                           { Val, true}
+                                   end,
     SessionsPopularities = Phase#arrivalphase.popularities,
     NewPhase = Phase#arrivalphase{popularities= [{Name, Popularity}| SessionsPopularities]},
     lists:foldl(fun parse/2,
@@ -432,15 +441,15 @@ parse(Element = #xmlElement{name=transaction, attributes=Attrs},
     RawName = getAttr(Attrs, name),
     {ok, [{atom,1,Name}],1} = erl_scan:string("tr_"++RawName),
     ?LOGF("Add start transaction ~p in session ~p as id ~p",
-         [Name,CurS#session.id,Id+1],?INFO),
+          [Name,CurS#session.id,Id+1],?INFO),
     ets:insert(Tab, {{CurS#session.id, Id+1}, {transaction,start,Name}}),
 
     NewConf=lists:foldl( fun parse/2,
-                 Conf#config{curid=Id+1},
-                 Element#xmlElement.content),
+                         Conf#config{curid=Id+1},
+                         Element#xmlElement.content),
     NewId = NewConf#config.curid,
     ?LOGF("Add end transaction ~p in session ~p as id ~p",
-         [Name,CurS#session.id,NewId+1],?INFO),
+          [Name,CurS#session.id,NewId+1],?INFO),
     ets:insert(Tab, {{CurS#session.id, NewId+1}, {transaction,stop,Name}}),
     NewConf#config{curid=NewId+1} ;
 
@@ -505,7 +514,7 @@ parse(_Element = #xmlElement{name=foreach, attributes=Attrs,content=Content},
     VarName = getAttr(atom,Attrs,in),
     ForName = getAttr(atom,Attrs,name),
     Filter  = case getAttr(string,Attrs,include) of
-                    "" ->
+                  "" ->
                       case getAttr(string,Attrs,exclude) of
                           "" ->
                               undefined;
@@ -513,10 +522,10 @@ parse(_Element = #xmlElement{name=foreach, attributes=Attrs,content=Content},
                               {ok, RegExp} = re:compile(Re2),
                               {false,RegExp}
                       end;
-                    Re ->
-                        {ok, CompiledRegExp} = re:compile(Re),
-                        {true,CompiledRegExp}
-                end,
+                  Re ->
+                      {ok, CompiledRegExp} = re:compile(Re),
+                      {true,CompiledRegExp}
+              end,
     InitialAction = {ctrl_struct, {foreach_start, ForName, VarName, Filter}},
     ?LOGF("Add foreach_start action in session ~p as id ~p",
           [CurS#session.id,Id+1],?INFO),
@@ -534,14 +543,14 @@ parse(_Element = #xmlElement{name=foreach, attributes=Attrs,content=Content},
 %%%% Parsing the 'repeat' element
 %%%% Last child element must be either 'while' or 'until'
 parse(_Element = #xmlElement{name=repeat,attributes=Attrs,content=Content},
-    Conf = #config{session_tab = Tab, sessions=[CurS|_], curid=Id}) ->
+      Conf = #config{session_tab = Tab, sessions=[CurS|_], curid=Id}) ->
     MaxRepeat = getAttr(integer,Attrs,max_repeat,20),
     RepeatName = get_dynvar_name(getAttr(string,Attrs,name)),
 
     [LastElement|_] = lists:reverse([E || E=#xmlElement{} <- Content]),
     case LastElement of
         #xmlElement{name=While,attributes=WhileAttrs}
-        when (While == 'while') or (While == 'until')->
+          when (While == 'while') or (While == 'until')->
             {Rel,Value} = case {getAttr(string,WhileAttrs,eq,none),
                                 getAttr(string,WhileAttrs,neq,none),
                                 getAttr(string,WhileAttrs,gt,none),
@@ -561,20 +570,20 @@ parse(_Element = #xmlElement{name=repeat,attributes=Attrs,content=Content},
                               {none, none, none, none, none, Lte} ->
                                   {lt,Lte}
                           end,
-                          %either <while .. eq=".."/> , <while ..neq=".."/>
-                          %either <while .. gt=".."/> , <while ..gte=".."/>
-                          %either <while .. lt=".."/> , <while ..lte=".."/>
+                                                %either <while .. eq=".."/> , <while ..neq=".."/>
+                                                %either <while .. gt=".."/> , <while ..gte=".."/>
+                                                %either <while .. lt=".."/> , <while ..lte=".."/>
             Var = getAttr(atom,WhileAttrs,var),
             NewConf = lists:foldl(fun parse/2, Conf#config{curid=Id}, Content),
             NewId = NewConf#config.curid,
             EndAction = {ctrl_struct,{repeat,RepeatName, While,Rel,Var,list_to_binary(Value),Id+1, MaxRepeat}},
-                                 %Id+1 -> id of the first action inside the loop
+                                                %Id+1 -> id of the first action inside the loop
             ?LOGF("Add repeat action in session ~p as id ~p, Jump to: ~p",
                   [CurS#session.id,NewId+1,Id+1],?INFO),
             ets:insert(Tab,{{CurS#session.id,NewId+1},EndAction}),
             NewConf#config{curid=NewId+1};
         _ -> exit({invalid_xml,"Last element inside a <repeat/> loop must be "
-                                "<while/> or <until/>"})
+                   "<while/> or <until/>"})
     end;
 
 %%% Parsing the dyn_variable element
@@ -586,7 +595,7 @@ parse(#xmlElement{name=dyn_variable, attributes=Attrs},
                         getAttr(string,Attrs,pgsql_expr,none),
                         getAttr(string,Attrs,xpath,none),
                         getAttr(string,Attrs,header,none),
-                       getAttr(string,Attrs,jsonpath,none)} of
+                        getAttr(string,Attrs,jsonpath,none)} of
                       {none,none,none,none,none} ->
                           DefaultRegExp = ?DEF_RE_DYNVAR_BEGIN ++ StrName
                               ++?DEF_RE_DYNVAR_END,
@@ -629,7 +638,7 @@ parse(#xmlElement{name=dyn_variable, attributes=Attrs},
     Conf#config{ dynvar= NewDynVar };
 
 parse( #xmlElement{name=change_type, attributes=Attrs},
-      Conf = #config{sessions=[CurS|Other], curid=Id,session_tab = Tab}) ->
+       Conf = #config{sessions=[CurS|Other], curid=Id,session_tab = Tab}) ->
 
     CType   = getAttr(atom, Attrs, new_type),
     Server  = getAttr(string, Attrs, host),
@@ -649,7 +658,7 @@ parse( #xmlElement{name=change_type, attributes=Attrs},
 
 
 parse( #xmlElement{name=interaction, attributes=Attrs},
-      Conf = #config{sessions=[CurS|_Other], curid=Id,session_tab = Tab}) ->
+       Conf = #config{sessions=[CurS|_Other], curid=Id,session_tab = Tab}) ->
 
     Action   = list_to_atom(getAttr(string, Attrs, action, "send")),
     RawId = getAttr(Attrs, id),
@@ -660,7 +669,7 @@ parse( #xmlElement{name=interaction, attributes=Attrs},
     Conf#config{curid=Id+1 };
 
 parse( Element = #xmlElement{name=set_option, attributes=Attrs},
-      Conf = #config{sessions=[CurS|_Other], curid=Id,session_tab = Tab}) ->
+       Conf = #config{sessions=[CurS|_Other], curid=Id,session_tab = Tab}) ->
 
     case getAttr(atom, Attrs, type) of
         "" ->
@@ -672,8 +681,8 @@ parse( Element = #xmlElement{name=set_option, attributes=Attrs},
                         {undefined, rate_limit, {1024*Rate div 1000, 1024 * Max}};
                     "certificate" ->
                         {value, #xmlElement{attributes=AttrCert}} = lists:keysearch(certificate,
-                                                                     #xmlElement.name,
-                                                                     Element#xmlElement.content),
+                                                                                    #xmlElement.name,
+                                                                                    Element#xmlElement.content),
                         Cacert = getAttr(string, AttrCert, cacertfile, undefined),
                         KeyFile = getAttr(string, AttrCert, keyfile, undefined),
                         KeyPass = getAttr(string, AttrCert, keypass, undefined),
@@ -710,7 +719,7 @@ parse(Element = #xmlElement{name=request, attributes=Attrs},
                                      tag=Tag
                                     },
                          Element#xmlElement.content)
-        end;
+    end;
 %%% Match
 parse(Element=#xmlElement{name=match,attributes=Attrs},
       Conf=#config{match=Match})->
@@ -775,7 +784,7 @@ parse(Element = #xmlElement{name=option, attributes=Attrs},
                                          Element#xmlElement.content);
                         true -> % default value, do nothing
                             lists:foldl( fun parse/2, Conf, Element#xmlElement.content)
-                        end;
+                    end;
                 "seed" ->
                     Seed =  getAttr(integer,Attrs, value, now),
                     lists:foldl( fun parse/2, Conf#config{seed=Seed},
@@ -785,7 +794,7 @@ parse(Element = #xmlElement{name=option, attributes=Attrs},
                     MaxBurst =  getAttr(integer,Attrs, max, Rate),
                     TokenBucket= #token_bucket{rate=1024*Rate div 1000, burst= 1024*MaxBurst},
                     lists:foldl( fun parse/2, Conf#config{rate_limit=TokenBucket},
-                                                          Element#xmlElement.content);
+                                 Element#xmlElement.content);
                 "hibernate" ->
                     Hibernate = case  getAttr(integer_or_string,Attrs, value, 10000 ) of
                                     "infinity" -> infinity;
@@ -907,33 +916,33 @@ parse(Element = #xmlElement{name=option, attributes=Attrs},
 parse(Element = #xmlElement{name=thinktime, attributes=Attrs},
       Conf = #config{curid=Id, session_tab = Tab, sessions = [CurS |_]}) ->
     {RT,T} = case getAttr(Attrs, value)  of
-            "wait_global" ->
-                {wait_global,infinity};
-            "%%"++Tail -> % dynamic thinktime
+                 "wait_global" ->
+                     {wait_global,infinity};
+                 "%%"++Tail -> % dynamic thinktime
                      {"%%"++Tail,"%%"++Tail};
-            _ ->
-                DefThink  = get_default(Tab,{thinktime, value},thinktime_value),
-                DefRandom = get_default(Tab,{thinktime, random},thinktime_random),
-                {Think, Randomize} =
-                    case get_default(Tab,{thinktime, override},thinktime_override) of
-                        "true" ->
-                            {DefThink, DefRandom};
-                        "false" ->
-                            case { getAttr(integer, Attrs, min),
-                                   getAttr(integer, Attrs, max),
-                                   getAttr(float_or_integer, Attrs, value)}  of
-                                {Min, Max, "" } when is_integer(Min), is_integer(Max), Max > 0, Min >0,  Max > Min ->
-                                    {"", {"range", Min, Max} };
-                                {"","",""} ->
-                                    CurRandom = getAttr(string, Attrs,random,DefRandom),
-                                    {DefThink, CurRandom};
-                                {"","",CurThink} when CurThink > 0 ->
-                                    CurRandom = getAttr(string, Attrs,random,DefRandom),
-                                    {CurThink, CurRandom};
-                                _ ->
-                                    exit({error, bad_thinktime})
-                            end
-                    end,
+                 _ ->
+                     DefThink  = get_default(Tab,{thinktime, value},thinktime_value),
+                     DefRandom = get_default(Tab,{thinktime, random},thinktime_random),
+                     {Think, Randomize} =
+                         case get_default(Tab,{thinktime, override},thinktime_override) of
+                             "true" ->
+                                 {DefThink, DefRandom};
+                             "false" ->
+                                 case { getAttr(integer, Attrs, min),
+                                        getAttr(integer, Attrs, max),
+                                        getAttr(float_or_integer, Attrs, value)}  of
+                                     {Min, Max, "" } when is_integer(Min), is_integer(Max), Max > 0, Min >0,  Max > Min ->
+                                         {"", {"range", Min, Max} };
+                                     {"","",""} ->
+                                         CurRandom = getAttr(string, Attrs,random,DefRandom),
+                                         {DefThink, CurRandom};
+                                     {"","",CurThink} when CurThink > 0 ->
+                                         CurRandom = getAttr(string, Attrs,random,DefRandom),
+                                         {CurThink, CurRandom};
+                                     _ ->
+                                         exit({error, bad_thinktime})
+                                 end
+                         end,
                      Val=case Randomize of
                              "true" ->
                                  {random, Think * 1000};
@@ -943,7 +952,7 @@ parse(Element = #xmlElement{name=thinktime, attributes=Attrs},
                                  round(Think * 1000)
                          end,
                      {Val, Think}
-        end,
+             end,
     ?LOGF("New thinktime ~p for id (~p:~p)~n",[RT, CurS#session.id, Id+1], ?INFO),
     ets:insert(Tab,{{CurS#session.id, Id+1}, {thinktime, RT}}),
     lists:foldl( fun parse/2, Conf#config{curthink=T,curid=Id+1},

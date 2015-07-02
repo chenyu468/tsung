@@ -135,6 +135,7 @@ sendmes({none, _, _})       -> skip;
 sendmes({protocol, _, _})   -> skip;
 sendmes({protocol_local, _, _})   -> skip;
 sendmes({_Type, Who, What}) ->
+    ?LOG("_138:~p~n~p~n",[Who,What]),
     gen_server:cast({global, ?MODULE}, {sendmsg, Who, ?NOW, What}).
 
 rcvmes({none, _, _})    -> skip;
@@ -432,7 +433,7 @@ start_logger({Machines, DumpType, fullstats}, From, State=#state{fullstats=undef
     end;
 
 start_logger({Machines, DumpType, Backend}, _From, State=#state{log=Log,fullstats=FS}) ->
-    ?LOGF("Activate clients with ~p backend~n",[Backend],?NOTICE),
+    ?LOGF("Activate clients1 with ~p backend~n",[Backend],?NOTICE),
     print_headline(Log,Backend),
     start_launchers(Machines),
     timer:apply_interval(State#state.dump_interval, ?MODULE, dumpstats, [] ),
